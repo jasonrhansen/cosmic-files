@@ -3,7 +3,7 @@
 
 use cosmic::{
     app::{self, context_drawer, cosmic::Cosmic, message, Core, Task},
-    cosmic_config, cosmic_theme, executor,
+    cosmic_theme, executor,
     iced::{
         event,
         futures::{self, SinkExt},
@@ -155,7 +155,7 @@ impl<M: Send + 'static> Dialog<M> {
         //TODO: only do this once somehow?
         crate::localize::localize();
 
-        let (config_handler, config) = Config::load();
+        let (_config_handler, config) = Config::load();
 
         let mut settings = window::Settings::default();
         settings.decorations = false;
@@ -186,7 +186,6 @@ impl<M: Send + 'static> Dialog<M> {
                     }
                 }),
             window_id,
-            config_handler,
             config,
         };
 
@@ -296,7 +295,6 @@ struct Flags {
     kind: DialogKind,
     path_opt: Option<PathBuf>,
     window_id: window::Id,
-    config_handler: Option<cosmic_config::Config>,
     config: Config,
 }
 

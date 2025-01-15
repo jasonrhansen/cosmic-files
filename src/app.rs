@@ -4373,7 +4373,7 @@ impl Application for App {
         struct TrashWatcherSubscription;
 
         let mut subscriptions = vec![
-            event::listen_with(|event, status, window_id| match event {
+            event::listen_with(|event, status, _window_id| match event {
                 Event::Keyboard(KeyEvent::KeyPressed { key, modifiers, .. }) => match status {
                     event::Status::Ignored => Some(Message::Key(modifiers, key)),
                     event::Status::Captured => None,
@@ -4705,7 +4705,6 @@ pub(crate) mod test_utils {
 
     use crate::{
         config::{IconSizes, TabConfig},
-        mounter::MounterMap,
         tab::Item,
     };
 

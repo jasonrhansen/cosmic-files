@@ -4402,7 +4402,7 @@ impl Tab {
         dnd_dest.into()
     }
 
-    pub fn view<'a>(&'a self, key_binds: &'a HashMap<KeyBind, Action>) -> Element<Message> {
+    pub fn view<'a>(&'a self, key_binds: &'a HashMap<KeyBind, Action>) -> Element<'a, Message> {
         widget::responsive(|size| self.view_responsive(key_binds, size)).into()
     }
 

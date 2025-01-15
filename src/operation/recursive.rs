@@ -298,8 +298,12 @@ impl Op {
                         }
                     }
                 }
-                //TODO: use OS-specific function
-                fs::soft_link(&target, &self.to)?;
+
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(&target, &self.to)?;
+
+                #[cfg(windows)]
+                std::os::windows::fs::symlink_file(&target, &self.to)?;
             }
         }
         Ok(true)
