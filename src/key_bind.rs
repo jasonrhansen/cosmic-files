@@ -31,6 +31,11 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
     bind!([], Key::Named(Named::ArrowUp), ItemUp);
     bind!([], Key::Named(Named::Home), SelectFirst);
     bind!([], Key::Named(Named::End), SelectLast);
+    bind!(
+        [],
+        Key::Named(Named::ContextMenu),
+        ContextMenuForSelectedItems
+    );
     bind!([Shift], Key::Named(Named::ArrowDown), ItemDown);
     bind!([Shift], Key::Named(Named::ArrowLeft), ItemLeft);
     bind!([Shift], Key::Named(Named::ArrowRight), ItemRight);

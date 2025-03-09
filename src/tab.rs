@@ -1165,6 +1165,7 @@ pub enum Message {
     Config(TabConfig),
     ContextAction(Action),
     ContextMenu(Option<Point>),
+    ContextMenuForSelectedItems,
     LocationContextMenuPoint(Option<Point>),
     LocationContextMenuIndex(Option<usize>),
     LocationMenuAction(LocationMenuAction),
@@ -2119,20 +2120,11 @@ impl Tab {
     fn select_focus_scroll(&mut self) -> Option<AbsoluteOffset> {
         let items = self.items_opt.as_ref()?;
         let item = items.get(self.select_focus?)?;
-        let rect = item.rect_opt.get()?;
+        self.scroll_to_rect(item.rect_opt.get()?)
+    }
 
-        //TODO: move to function
-        let visible_rect = {
-            let point = match self.scroll_opt {
-                Some(offset) => Point::new(0.0, offset.y),
-                None => Point::new(0.0, 0.0),
-            };
-            let size = self
-                .item_view_size_opt
-                .get()
-                .unwrap_or_else(|| Size::new(0.0, 0.0));
-            Rectangle::new(point, size)
-        };
+    fn scroll_to_rect(&mut self, rect: Rectangle) -> Option<AbsoluteOffset> {
+        let visible_rect = self.visible_rect();
 
         if rect.y < visible_rect.y {
             // Scroll up to rect
@@ -2205,6 +2197,30 @@ impl Tab {
             });
         }
         last
+    }
+
+    fn visible_rect(&self) -> Rectangle {
+        let point = match self.scroll_opt {
+            Some(offset) => Point::new(0.0, offset.y),
+            None => Point::new(0.0, 0.0),
+        };
+        let size = self
+            .item_view_size_opt
+            .get()
+            .unwrap_or_else(|| Size::new(0.0, 0.0));
+        Rectangle::new(point, size)
+    }
+
+    pub fn item_index_at_position(&self, (row, col): (usize, usize)) -> Option<usize> {
+        let items = self.items_opt.as_ref()?;
+        for (i, item) in items.iter().enumerate() {
+            if let Some((item_row, item_col)) = item.pos_opt.get() {
+                if item_row == row && item_col == col {
+                    return Some(i);
+                }
+            }
+        }
+        return None;
     }
 
     pub fn change_location(&mut self, location: &Location, history_i_opt: Option<usize>) {
@@ -2530,6 +2546,31 @@ impl Tab {
                                 item.selected = false;
                             }
                         }
+                    }
+                }
+            }
+            Message::ContextMenuForSelectedItems => {
+                if self.context_menu.is_none() {
+                    if let Some(pos) = self.select_first_pos_opt() {
+                        if let Some(index) = self.item_index_at_position(pos) {
+                            if let Some(items) = self.items_opt.as_ref() {
+                                let item = &items[index];
+                                if let Some(item_rect) = item.rect_opt.get() {
+                                    self.context_menu = Some(item_rect.position());
+                                    if let Some(offset) = self.scroll_to_rect(item_rect) {
+                                        commands.push(Command::Iced(
+                                            scrollable::scroll_to(
+                                                self.scrollable_id.clone(),
+                                                offset,
+                                            )
+                                            .into(),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        self.context_menu = Some(self.visible_rect().position());
                     }
                 }
             }
@@ -4806,15 +4847,7 @@ impl Tab {
         let mut subscriptions = Vec::with_capacity(jobs + 3);
 
         if let Some(items) = &self.items_opt {
-            //TODO: move to function
-            let visible_rect = {
-                let point = match self.scroll_opt {
-                    Some(offset) => Point::new(0.0, offset.y),
-                    None => Point::new(0.0, 0.0),
-                };
-                let size = self.size_opt.get().unwrap_or_else(|| Size::new(0.0, 0.0));
-                Rectangle::new(point, size)
-            };
+            let visible_rect = self.visible_rect();
 
             //TODO: HACK to ensure positions are up to date since subscription runs before view
             match self.config.view {

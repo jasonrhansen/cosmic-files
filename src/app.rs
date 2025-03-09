@@ -50,8 +50,7 @@ use slotmap::Key as SlotMapKey;
 use std::{
     any::TypeId,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
-    env,
-    fmt, fs, io,
+    env, fmt, fs, io,
     num::NonZeroU16,
     path::{Path, PathBuf},
     process,
@@ -150,6 +149,7 @@ pub enum Action {
     ZoomIn,
     ZoomOut,
     Recents,
+    ContextMenuForSelectedItems,
 }
 
 impl Action {
@@ -222,6 +222,9 @@ impl Action {
             Action::ZoomIn => Message::ZoomIn(entity_opt),
             Action::ZoomOut => Message::ZoomOut(entity_opt),
             Action::Recents => Message::Recents,
+            Action::ContextMenuForSelectedItems => {
+                Message::TabMessage(entity_opt, tab::Message::ContextMenuForSelectedItems)
+            }
         }
     }
 }
