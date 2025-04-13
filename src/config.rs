@@ -107,6 +107,7 @@ pub struct Config {
     pub app_theme: AppTheme,
     pub desktop: DesktopConfig,
     pub favorites: Vec<Favorite>,
+    pub dialog_show_details: bool,
     pub show_details: bool,
     pub tab: TabConfig,
     pub type_to_search: TypeToSearch,
@@ -156,6 +157,7 @@ impl Default for Config {
                 Favorite::Videos,
             ],
             show_details: false,
+            dialog_show_details: false,
             tab: TabConfig::default(),
             type_to_search: TypeToSearch::Recursive,
         }

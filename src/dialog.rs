@@ -394,6 +394,7 @@ enum Message {
     SearchActivate,
     SearchClear,
     SearchInput(String),
+    SetShowDetails(bool),
     Surface(cosmic::surface::Action),
     #[allow(clippy::enum_variant_names)]
     TabMessage(tab::Message),
@@ -686,6 +687,14 @@ impl App {
 
     fn update_config(&mut self) -> Task<Message> {
         self.update_nav_model();
+        for choice in self.choices.iter_mut() {
+            if let DialogChoice::CheckBox { id, value, .. } = choice {
+                if id == "show-details" {
+                    *value = self.flags.config.dialog_show_details;
+                }
+            }
+        }
+
         Task::none()
     }
 
@@ -854,8 +863,7 @@ impl Application for App {
         core.window.show_close = false;
         core.window.show_maximize = false;
         core.window.show_minimize = false;
-        // Only show details context drawer by default in open dialog
-        core.window.show_context = !flags.kind.save();
+        core.window.show_context = flags.config.dialog_show_details;
 
         let title = flags.kind.title();
         let accept_label = flags.kind.accept_label();
@@ -880,12 +888,18 @@ impl Application for App {
 
         let key_binds = key_binds(&tab.mode);
 
+        let show_details = flags.config.show_details;
+
         let mut app = App {
             core,
             flags,
             title,
             accept_label: DialogLabel::from(accept_label),
-            choices: Vec::new(),
+            choices: vec![DialogChoice::CheckBox {
+                id: "show-details".to_string(),
+                label: fl!("show-details"),
+                value: show_details,
+            }],
             context_page: ContextPage::Preview(None, PreviewKind::Selected),
             dialog_pages: VecDeque::new(),
             dialog_text_input: widget::Id::unique(),
@@ -1199,7 +1213,14 @@ impl Application for App {
             Message::Choice(choice_i, option_i) => {
                 if let Some(choice) = self.choices.get_mut(choice_i) {
                     match choice {
-                        DialogChoice::CheckBox { value, .. } => *value = option_i > 0,
+                        DialogChoice::CheckBox { id, value, .. } => {
+                            *value = option_i > 0;
+                            if id == "show-details" {
+                                return cosmic::task::message(cosmic::action::app(
+                                    Message::Preview,
+                                ));
+                            }
+                        }
                         DialogChoice::ComboBox {
                             options, selected, ..
                         } => {
@@ -1456,15 +1477,21 @@ impl Application for App {
                     }
                 }
             }
-            Message::Preview => match self.context_page {
-                ContextPage::Preview(..) => {
-                    self.core.window.show_context = !self.core.window.show_context;
-                }
-                _ => {
-                    self.context_page = ContextPage::Preview(None, PreviewKind::Selected);
-                    self.core.window.show_context = true;
-                }
-            },
+            Message::Preview => {
+                match self.context_page {
+                    ContextPage::Preview(..) => {
+                        self.core.window.show_context = !self.core.window.show_context;
+                    }
+                    _ => {
+                        self.context_page = ContextPage::Preview(None, PreviewKind::Selected);
+                        self.core.window.show_context = true;
+                    }
+                };
+
+                return cosmic::task::message(cosmic::action::app(Message::SetShowDetails(
+                    self.core.window.show_context,
+                )));
+            }
             Message::Save(replace) => {
                 if let DialogKind::SaveFile { filename } = &self.flags.kind {
                     if !filename.is_empty() {
@@ -1505,6 +1532,21 @@ impl Application for App {
             }
             Message::SearchInput(input) => {
                 return self.search_set(Some(input));
+            }
+            Message::SetShowDetails(show_details) => {
+                if let Some(config_handler) = &self.flags.config_handler {
+                    if let Err(err) = self
+                        .flags
+                        .config
+                        .set_dialog_show_details(config_handler, show_details)
+                    {
+                        log::warn!("failed to save config dialog_show_details: {}", err);
+                    };
+                } else {
+                    self.flags.config.show_details = show_details;
+                    log::warn!("failed to save config dialog_show_details",);
+                }
+                return self.update_config();
             }
             Message::TabMessage(tab_message) => {
                 let click_i_opt = match tab_message {
