@@ -1720,7 +1720,7 @@ impl ItemThumbnail {
                 CachedThumbnail::Valid((path, size)) => {
                     return ItemThumbnail::Image(
                         widget::image::Handle::from_path(path),
-                        Some((size, size)),
+                        size.map(|s| (s, s)),
                     );
                 }
                 CachedThumbnail::Failed => {

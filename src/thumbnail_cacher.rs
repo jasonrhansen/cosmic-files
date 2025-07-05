@@ -49,10 +49,10 @@ impl ThumbnailSize {
 }
 
 pub enum CachedThumbnail {
-    /// The cached thumbnail is valid and should be used.
-    Valid((PathBuf, u32)),
+    /// The cached thumbnail is valid and should be used with size if known.
+    Valid((PathBuf, Option<u32>)),
     /// The cached thumbnail doesn't exist or it's invalid and
-    /// needs to be recreated.
+    /// needs to be recreated with the pixel size.
     RequiresUpdate(u32),
     // The cached thumbnail is in a failed statue.
     // This means it failed to create by cosmic-files in the past
@@ -89,19 +89,22 @@ impl ThumbnailCacher {
     }
 
     pub fn get_cached_thumbnail(&self) -> CachedThumbnail {
-        // The file is already a thumbnail, so just use it.
-        if self.thumbnail_path.parent() == self.file_path.parent() {
-            return CachedThumbnail::Valid((
-                self.file_path.to_path_buf(),
-                self.thumbnail_size.pixel_size(),
-            ));
+        // If the file is already a thumbnail, just use it so we don't generate
+        // cached thumbnails of thumbnails.
+        if let (Some(cache_base_dir), Ok(metadata)) = (
+            THUMBNAIL_CACHE_BASE_DIR.as_ref(),
+            std::fs::metadata(&self.file_path),
+        ) {
+            if metadata.is_file() && self.file_path.starts_with(cache_base_dir) {
+                return CachedThumbnail::Valid((self.file_path.to_path_buf(), None));
+            }
         }
 
         // Use cached thumbnail if it is valid.
         if self.is_cached_thumbnail_valid() {
             return CachedThumbnail::Valid((
                 self.thumbnail_path.clone(),
-                self.thumbnail_size.pixel_size(),
+                Some(self.thumbnail_size.pixel_size()),
             ));
         }
 
