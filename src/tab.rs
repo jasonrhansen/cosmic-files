@@ -52,6 +52,7 @@ use std::{
     cell::Cell,
     cmp::Ordering,
     collections::HashMap,
+    env,
     error::Error,
     fmt::{self, Display},
     fs::{self, File, Metadata},
@@ -62,8 +63,9 @@ use std::{
     sync::{atomic, Arc, LazyLock, Mutex, RwLock},
     time::{Duration, Instant, SystemTime},
 };
+use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
-use trash::{TrashItemMetadata, TrashItemSize};
+use trash::TrashItemSize;
 use walkdir::WalkDir;
 
 use crate::{
@@ -78,6 +80,7 @@ use crate::{
     mounter::MOUNTERS,
     mouse_area,
     operation::Controller,
+    thumbnail_cacher::{CachedThumbnail, ThumbnailCacher, ThumbnailSize},
     thumbnailer::thumbnailer,
 };
 use uzers::{get_group_by_gid, get_user_by_uid};
@@ -1705,7 +1708,46 @@ impl Clone for ItemThumbnail {
 }
 
 impl ItemThumbnail {
-    pub fn new(path: &Path, metadata: ItemMetadata, mime: mime::Mime, thumbnail_size: u32) -> Self {
+    pub fn new(
+        path: &Path,
+        metadata: ItemMetadata,
+        mime: mime::Mime,
+        mut thumbnail_size: u32,
+    ) -> Self {
+        let cacher = ThumbnailCacher::new(path, ThumbnailSize::from_pixel_size(thumbnail_size));
+        match cacher.as_ref() {
+            Ok(cache) => match cache.get_cached_thumbnail() {
+                CachedThumbnail::Valid((path, size)) => {
+                    return ItemThumbnail::Image(
+                        widget::image::Handle::from_path(path),
+                        Some((size, size)),
+                    );
+                }
+                CachedThumbnail::Failed => {
+                    return ItemThumbnail::NotImage;
+                }
+                CachedThumbnail::RequiresUpdate(size) => {
+                    thumbnail_size = size;
+                }
+            },
+            Err(err) => {
+                log::warn!("failed to create ThumbnailCache for {:?}: {}", path, err);
+            }
+        }
+
+        let thumbnail_dir = cacher.as_ref().ok().map(|c| c.thumbnail_dir());
+
+        if let Some((item_thumbnail, temp_file)) =
+            Self::generate_thumbnail_external(path, &mime, thumbnail_size, thumbnail_dir)
+        {
+            if let Ok(cache) = cacher {
+                if let Err(err) = cache.update(temp_file) {
+                    log::warn!("failed to update cache for {:?}: {}", path, err);
+                }
+            }
+            return item_thumbnail;
+        }
+
         let size = metadata.file_size().unwrap_or_default();
         let check_size = |thumbnailer: &str, max_size| {
             if size <= max_size {
@@ -1773,15 +1815,37 @@ impl ItemThumbnail {
             */
         }
 
+        ItemThumbnail::NotImage
+    }
+
+    fn generate_thumbnail_external(
+        path: &Path,
+        mime: &mime::Mime,
+        thumbnail_size: u32,
+        thumbnail_dir: Option<&Path>,
+    ) -> Option<(Self, NamedTempFile)> {
         // Try external thumbnailers
         for thumbnailer in thumbnailer(&mime) {
-            let prefix = if thumbnailer.exec.starts_with("evince-thumbnailer ") {
+            let is_evince = thumbnailer.exec.starts_with("evince-thumbnailer ");
+            let prefix = if is_evince {
                 //TODO: apparmor config for evince-thumbnailer does not allow /tmp/cosmic-files*
                 "gnome-desktop-"
             } else {
                 "cosmic-files-"
             };
-            let file = match tempfile::NamedTempFile::with_prefix(prefix) {
+
+            // It's preferable to create the tempfile in the same directory as the final cached
+            // thumbnail to ensure that no copies accross filesytems need to be made. However,
+            // the apparmor config for evince-thumbnailer does not allow this, so we need to
+            // fallback to the system tempdir.
+            let file = if thumbnail_dir.is_none() || is_evince {
+                tempfile::Builder::new().prefix(prefix).tempfile()
+            } else {
+                tempfile::Builder::new()
+                    .prefix(prefix)
+                    .tempfile_in(thumbnail_dir.unwrap())
+            };
+            let file = match file {
                 Ok(ok) => ok,
                 Err(err) => {
                     log::warn!(
@@ -1804,14 +1868,17 @@ impl ItemThumbnail {
                         {
                             Ok(reader) => match reader.decode().map(|image| image.into_rgba8()) {
                                 Ok(image) => {
-                                    return ItemThumbnail::Image(
-                                        widget::image::Handle::from_rgba(
-                                            image.width(),
-                                            image.height(),
-                                            image.into_raw(),
+                                    return Some((
+                                        ItemThumbnail::Image(
+                                            widget::image::Handle::from_rgba(
+                                                image.width(),
+                                                image.height(),
+                                                image.into_raw(),
+                                            ),
+                                            None,
                                         ),
-                                        None,
-                                    );
+                                        file,
+                                    ));
                                 }
                                 Err(err) => {
                                     log::warn!("failed to decode {:?}: {}", path, err);
@@ -1831,7 +1898,7 @@ impl ItemThumbnail {
             }
         }
 
-        ItemThumbnail::NotImage
+        None
     }
 }
 
